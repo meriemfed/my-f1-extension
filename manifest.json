@@ -1,0 +1,10 @@
+{
+    "name" : "F1 extension",
+    "description" : "Base Level Extension",
+    "version" : "1.0",
+    "manifest_version" : 3,
+    "action" : {
+        "default_popup" : "popup/popup.html",
+        "default_icon"  : "images/f1_icon.png"
+    }
+}
