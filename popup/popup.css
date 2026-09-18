@@ -1,4 +1,119 @@
+:root {
+  --f1-red: #E10600;
+  --near-black: #15151E;
+  --white: #FFFFFF;
+  --gray-text: #949498;
+  --grey: #585652;
+}
+
 body {
   width: 350px;
   min-height: 400px;
+  background-color: var(--f1-red);
+  color: var(--grey);
+  font-family:'Space Grotesk',sans-serif;
+  
+}
+header{
+  background-color: var(--white);
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  color: var(--near-black);
+  position: relative;
+}
+
+#next-session-title{
+  color: var(--near-black);
+}
+#countdown{
+  color: var(--f1-red);
+}
+.session-card {
+  background-color: var(--white);
+  border-left: 4px solid var(--near-black);
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+
+}
+
+
+.season-tag {
+  color: var(--f1-red);
+  font-weight: 600;
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px;
+}
+
+.season-tag::before,
+.season-tag::after {
+  content: "";
+  display: inline-block;
+  width: 30px;
+  height: 10px;
+  background: conic-gradient(
+    #000 90deg, #fff 90deg 180deg,
+    #000 180deg 270deg, #fff 270deg 360deg
+  );
+  background-size: 10px 10px;
+}
+.cancelled {
+  color: var(--f1-red);
+  font-weight: 700;
+}
+
+#next-session{
+  background-color: var(--white);
+  border-left: 4px solid var(--near-black);
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+}
+
+#list-title{
+  background-color: var(--white);
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  color: var(--near-black);
+  position: relative;
+  overflow: hidden;
+  
+}
+#list-title::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 80px;
+  background: conic-gradient(
+    #000 90deg, #fff 90deg 180deg,
+    #000 180deg 270deg, #fff 270deg 360deg
+  );
+  background-size: 14px 14px;
+  border-top-right-radius: inherit;
+  border-bottom-right-radius: inherit;
+  mask-image: linear-gradient(to left, black, transparent);
+  -webkit-mask-image: linear-gradient(to left, black, transparent);
+}
+
+.session-name{
+  color: var(--near-black);
+  font-weight: 700;
+}
+
+.session-date,.session-time{
+  color: var(--grey);
+}
+
+
+.label {
+  font-weight: 700;
 }

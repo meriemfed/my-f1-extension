@@ -1,4 +1,8 @@
 const ONE_HOUR = 1000 * 60 * 60;
+const LIVE_WINDOW_BUFFER = 30 * 60 * 1000;
+
+const currentYear = new Date().getFullYear().toString().slice(-2);
+document.getElementById("season-label").textContent = `Season ${currentYear}`;
 
 // reusable functions to avoid duplicates and cluttering the js file
 
@@ -45,16 +49,22 @@ function renderWeekendList(allSessions, nextSession) {
     const dOnly = new Date(session.date_start).toLocaleDateString("fr-FR");
     const tOnly = new Date(session.date_start).toLocaleTimeString("fr-FR", { timeStyle: "short" });
 
-    const cancelledNote = session.is_cancelled
-      ? `<p class="cancelled">Status : Cancelled</p>`
-      : "";
+   
 
-    card.innerHTML = `
-      <p><strong>${session.session_name}</strong></p>
-      <p>Date : ${dOnly}</p>
-      <p>Time : ${tOnly}</p>
-      ${cancelledNote}
-    `;
+      card.innerHTML = `
+        <p class="session-name"></p>
+        <p class="session-date"><span class="label">Date : </span><span class="value"></span></p>
+        <p class="session-time"><span class="label">Time : </span><span class="value"></span></p>
+        <p class="session-cancelled"></p>
+      `;
+
+      card.querySelector(".session-name").textContent = session.session_name;
+      card.querySelector(".session-date .value").textContent = dOnly;
+      card.querySelector(".session-time .value").textContent = tOnly;
+
+      if (session.is_cancelled) {
+      card.querySelector(".session-cancelled").textContent = "Status : Cancelled";
+}
 
     listContainer.appendChild(card);
   });
@@ -114,12 +124,51 @@ function fetchAndCache() {
 }
 
 
-// this is the start of the code ,we check chrome storage first and compare timestamp with actual
-// time if it's over one hour since that's the refresh threshold,if it's stale we fetch new data 
-// if it's not we don't 
+// returns the session's current phase relative to time now: "starting-soon", 
+// "in-progress", "wrapping-up" (within 30 min after end according to the openf1 API live window), or null if not live at all
+function getLiveStatus(session) {
+  const now = Date.now();
+  const start = new Date(session.date_start).getTime();
+  const end = new Date(session.date_end).getTime();
+
+  if (now >= start - LIVE_WINDOW_BUFFER && now < start) return "starting-soon";
+  if (now >= start && now <= end) return "in-progress";
+  if (now > end && now <= end + LIVE_WINDOW_BUFFER) return "wrapping-up";
+  return null;
+}
+
+// entry point: check cache first. if the cached next session is currently live 
+// (in any phase), show a status message instead of fetching. otherwise, fetch 
+// only if the cache is missing, older than 1 hour, or no longer live at all
 chrome.storage.local.get(["cachedSessions", "cachedTimestamp"]).then((result) => {
   const now = Date.now();
-  const isStale = !result.cachedTimestamp || now - result.cachedTimestamp > ONE_HOUR;
+  const hasCachedNextSession = result.cachedSessions && result.cachedSessions.length > 0;
+
+  const liveStatus = hasCachedNextSession ? getLiveStatus(result.cachedSessions[0]) : null;
+
+if (liveStatus) {
+  const session = result.cachedSessions[0];
+  let message;
+
+  if (liveStatus === "starting-soon") {
+    message = `<strong class="live-session-name"></strong> is starting soon.`;
+  } else if (liveStatus === "in-progress") {
+    message = `<strong class="live-session-name"></strong> is currently in progress.`;
+  } else {
+    message = `<strong class="live-session-name"></strong> has finished `;
+  }
+
+  document.getElementById("next-session").innerHTML = `
+    <p>${message}</p>
+    <p>Live timing isn't available in this extension.</p>
+  `;
+  document.querySelector(".live-session-name").textContent = session.session_name;
+  renderWeekendList(result.cachedSessions, session);
+  return;
+}
+
+  const isStale = !result.cachedTimestamp || now - result.cachedTimestamp > ONE_HOUR ||
+    (hasCachedNextSession && getLiveStatus(result.cachedSessions[0]) === null);
 
   if (!isStale) {
     renderAll(result.cachedSessions);
