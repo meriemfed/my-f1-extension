@@ -12,7 +12,7 @@ done. It's also been a genuine learning project along the way since it's my firs
 - Graceful handling during live sessions (since OpenF1's real-time data needs a paid tier)
 
 ## Screenshots
-![extension view](screenshots/extension-demo.png)
+![extension view](images/extension-demo.png)
 
 ## Built with
 Vanilla JS, HTML, CSS, Manifest V3, OpenF1 API.
