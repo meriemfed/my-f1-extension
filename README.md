@@ -8,6 +8,7 @@ done. It's also been a genuine learning project along the way since it's my firs
 - Live countdown to next session
 - Full remaining weekend schedule (remaining sessions)
 - Handles cancelled sessions
+- Session times shown in your local timezone automatically (no manual timezone setup)
 - Local caching (not to overload the API for no reason)
 - Graceful handling during live sessions (since OpenF1's real-time data needs a paid tier)
 
