@@ -41,5 +41,3 @@ the fetch altogether and shows a simple status (starting soon / in progress
 - select the folder that contains manifest.json.
 - pin the extension then click on it and you're done.
 
-## License
-This project is licensed under the MIT License — see LICENSE for details.
