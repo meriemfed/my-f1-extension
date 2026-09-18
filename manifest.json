@@ -7,5 +7,7 @@
         "default_popup" : "popup/popup.html",
         "default_icon"  : "images/f1_icon.png"
     },
-    "permissions": ["storage"]
+    "permissions": ["storage"],
+    "host_permissions": ["https://api.openf1.org/*"]
+    
 }
