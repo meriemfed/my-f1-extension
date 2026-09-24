@@ -1,10 +1,23 @@
 const ONE_HOUR = 1000 * 60 * 60;
 const LIVE_WINDOW_BUFFER = 30 * 60 * 1000;
 
+let countdownTimer = null;
+
 const currentYear = new Date().getFullYear().toString().slice(-2);
 document.getElementById("season-label").textContent = `Season ${currentYear}`;
 
 // reusable functions to avoid duplicates and cluttering the js file
+
+// returns true only if the data is a non-empty array of session objects
+function isValidSessions(data) {
+  return (
+    Array.isArray(data) &&
+    data.length > 0 &&
+    typeof data[0] === "object" &&
+    data[0] !== null &&
+    "date_start" in data[0]
+  );
+}
 
 // this function displays the next session data on the main card
 function renderNextSession(session) {
@@ -23,7 +36,8 @@ function renderNextSession(session) {
   }
 
   updateCountdown(session.date_start);
-  setInterval(() => updateCountdown(session.date_start), 1000);
+  clearInterval(countdownTimer);
+  countdownTimer = setInterval(() => updateCountdown(session.date_start), 1000);
 }
 
 // this function displays the rest of the sessions of the weekend in a list below the next session card
@@ -49,30 +63,28 @@ function renderWeekendList(allSessions, nextSession) {
     const dOnly = new Date(session.date_start).toLocaleDateString("fr-FR");
     const tOnly = new Date(session.date_start).toLocaleTimeString("fr-FR", { timeStyle: "short" });
 
-   
+    card.innerHTML = `
+      <p class="session-name"></p>
+      <p class="session-date"><span class="label">Date : </span><span class="value"></span></p>
+      <p class="session-time"><span class="label">Time : </span><span class="value"></span></p>
+      <p class="session-cancelled"></p>
+    `;
 
-      card.innerHTML = `
-        <p class="session-name"></p>
-        <p class="session-date"><span class="label">Date : </span><span class="value"></span></p>
-        <p class="session-time"><span class="label">Time : </span><span class="value"></span></p>
-        <p class="session-cancelled"></p>
-      `;
+    card.querySelector(".session-name").textContent = session.session_name;
+    card.querySelector(".session-date .value").textContent = dOnly;
+    card.querySelector(".session-time .value").textContent = tOnly;
 
-      card.querySelector(".session-name").textContent = session.session_name;
-      card.querySelector(".session-date .value").textContent = dOnly;
-      card.querySelector(".session-time .value").textContent = tOnly;
-
-      if (session.is_cancelled) {
+    if (session.is_cancelled) {
       card.querySelector(".session-cancelled").textContent = "Status : Cancelled";
-}
+    }
 
     listContainer.appendChild(card);
   });
 }
 
-// this function simply uses previous functions to display data of the full weekend , used to avoid cluttering
+// this function simply uses previous functions to display data of the full weekend, used to avoid cluttering
 function renderAll(allSessions) {
-  if (allSessions.length === 0) {
+  if (!Array.isArray(allSessions) || allSessions.length === 0) {
     document.getElementById("next-session").innerHTML = "<p>No upcoming session scheduled</p>";
     return;
   }
@@ -81,7 +93,7 @@ function renderAll(allSessions) {
   renderWeekendList(allSessions, nextSession);
 }
 
-// this function creates countdown,calculates and updates the time remaining until session start
+// this function creates countdown, calculates and updates the time remaining until session start
 function updateCountdown(targetDateString) {
   const target = new Date(targetDateString).getTime();
   const now = new Date().getTime();
@@ -101,8 +113,8 @@ function updateCountdown(targetDateString) {
     `${days}d ${hours}h ${minutes}m ${seconds}s`;
 }
 
-
-// this function fetches data from the api,sets the cache and displays the data
+// this function fetches data from the api, validates it, sets the cache and displays the data.
+// invalid responses (like the live-session lock object) are NEVER cached.
 function fetchAndCache() {
   const now = new Date().toISOString();
   const url = `https://api.openf1.org/v1/sessions?date_start>=${now}`;
@@ -110,6 +122,13 @@ function fetchAndCache() {
   fetch(url)
     .then((response) => response.json())
     .then((jsonContent) => {
+      // API returns an object like { detail: "..." } instead of an array when restricted
+      if (!Array.isArray(jsonContent)) {
+        const err = new Error(jsonContent && jsonContent.detail ? jsonContent.detail : "Unexpected response");
+        err.restricted = true;
+        throw err;
+      }
+
       chrome.storage.local.set({
         cachedSessions: jsonContent,
         cachedTimestamp: Date.now(),
@@ -118,13 +137,13 @@ function fetchAndCache() {
     })
     .catch((error) => {
       console.error("Fetch failed:", error);
-      document.getElementById("next-session").innerHTML =
-        "<p>Couldn't load session data. Check your connection and try again.</p>";
+      document.getElementById("next-session").innerHTML = error.restricted
+        ? "<p>Data access is restricted while a live session is running. Try again after it ends.</p>"
+        : "<p>Couldn't load session data. Check your connection and try again.</p>";
     });
 }
 
-
-// returns the session's current phase relative to time now: "starting-soon", 
+// returns the session's current phase relative to time now: "starting-soon",
 // "in-progress", "wrapping-up" (within 30 min after end according to the openf1 API live window), or null if not live at all
 function getLiveStatus(session) {
   const now = Date.now();
@@ -137,41 +156,54 @@ function getLiveStatus(session) {
   return null;
 }
 
-// entry point: check cache first. if the cached next session is currently live 
-// (in any phase), show a status message instead of fetching. otherwise, fetch 
-// only if the cache is missing, older than 1 hour, or no longer live at all
+// entry point: check cache first. if the cached next session is currently live
+// (in any phase), show a status message instead of fetching. otherwise, fetch
+// only if the cache is missing/invalid, older than 1 hour, or the cached session is over
 chrome.storage.local.get(["cachedSessions", "cachedTimestamp"]).then((result) => {
   const now = Date.now();
-  const hasCachedNextSession = result.cachedSessions && result.cachedSessions.length > 0;
 
-  const liveStatus = hasCachedNextSession ? getLiveStatus(result.cachedSessions[0]) : null;
+  // only trust the cache if it is a valid array of sessions
+  const cached = isValidSessions(result.cachedSessions) ? result.cachedSessions : null;
 
-if (liveStatus) {
-  const session = result.cachedSessions[0];
-  let message;
-
-  if (liveStatus === "starting-soon") {
-    message = `<strong class="live-session-name"></strong> is starting soon.`;
-  } else if (liveStatus === "in-progress") {
-    message = `<strong class="live-session-name"></strong> is currently in progress.`;
-  } else {
-    message = `<strong class="live-session-name"></strong> has finished `;
+  // clean up any previously poisoned cache
+  if (result.cachedSessions && !cached) {
+    chrome.storage.local.remove(["cachedSessions", "cachedTimestamp"]);
   }
 
-  document.getElementById("next-session").innerHTML = `
-    <p>${message}</p>
-    <p>Live timing isn't available in this extension.</p>
-  `;
-  document.querySelector(".live-session-name").textContent = session.session_name;
-  renderWeekendList(result.cachedSessions, session);
-  return;
-}
+  const liveStatus = cached ? getLiveStatus(cached[0]) : null;
 
-  const isStale = !result.cachedTimestamp || now - result.cachedTimestamp > ONE_HOUR ||
-    (hasCachedNextSession && getLiveStatus(result.cachedSessions[0]) === null);
+  if (liveStatus) {
+    const session = cached[0];
+    let message;
+
+    if (liveStatus === "starting-soon") {
+      message = `<strong class="live-session-name"></strong> is starting soon.`;
+    } else if (liveStatus === "in-progress") {
+      message = `<strong class="live-session-name"></strong> is currently in progress.`;
+    } else {
+      message = `<strong class="live-session-name"></strong> has finished.`;
+    }
+
+    document.getElementById("next-session").innerHTML = `
+      <p>${message}</p>
+      <p>Live timing isn't available in this extension.</p>
+    `;
+    document.querySelector(".live-session-name").textContent = session.session_name;
+    renderWeekendList(cached, session);
+    return;
+  }
+
+  // the cached "next session" is over (past its live window) means data is outdated
+  const isOver = cached && now > new Date(cached[0].date_end).getTime() + LIVE_WINDOW_BUFFER;
+
+  const isStale =
+    !cached ||
+    !result.cachedTimestamp ||
+    now - result.cachedTimestamp > ONE_HOUR ||
+    isOver;
 
   if (!isStale) {
-    renderAll(result.cachedSessions);
+    renderAll(cached);
   } else {
     fetchAndCache();
   }
