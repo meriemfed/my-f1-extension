@@ -225,25 +225,22 @@ const liveSessionKey = cached[0].session_key;
   fetch(`https://api.openf1.org/v1/sessions?session_key=${liveSessionKey}`)
     .then((r) => r.json())
     .then((data) => {
-      if (Array.isArray(data) && data.length > 0) {
-        const updatedSession = data[0];
-        const updatedEnd = new Date(updatedSession.date_end).getTime();
-
-        if (now <= updatedEnd + LIVE_WINDOW_BUFFER) {
-
-          const refreshedCache = [updatedSession, ...cached.slice(1)];
-          chrome.storage.local.set({ cachedSessions: refreshedCache, cachedTimestamp: Date.now() });
-          showLiveMessage(refreshedCache, "in-progress", true);
-        } else {
-         
-          fetchAndCache();
-        }
-      } else if (data && data.detail) {
-        
+      if (data && data.detail) {
+        // locked out -> api confirms this session is still live right now
         showLiveMessage(cached, "in-progress", true);
-      } else {
-        showLiveMessage(cached, liveStatus || "wrapping-up");
+        return;
       }
+
+      if (Array.isArray(data) && data.length > 0) {
+        // not locked, got real data back for this session_key -> trust it's over,
+        // but do NOT trust date_end alone for "still running" — absence of a lock
+        // is the real signal here
+        fetchAndCache();
+        return;
+      }
+
+      // anything else (empty array, unexpected shape) -> fall back safely
+      showLiveMessage(cached, liveStatus || "wrapping-up");
     })
     .catch(() => {
       showLiveMessage(cached, liveStatus || "wrapping-up");
