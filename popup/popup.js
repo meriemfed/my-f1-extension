@@ -220,25 +220,34 @@ chrome.storage.local.get(["cachedSessions", "cachedTimestamp"]).then((result) =>
       (sessionShouldHaveStarted && liveStatus === null && now < scheduledEnd + 4 * ONE_HOUR));
 
   if (needsRevalidation) {
-    fetch(`https://api.openf1.org/v1/sessions?date_start>=${new Date().toISOString()}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (Array.isArray(data)) {
-         
-          chrome.storage.local.set({ cachedSessions: data, cachedTimestamp: Date.now() });
-          renderAll(data);
-        } else if (data && data.detail) {
-          
-          showLiveMessage(cached, "in-progress", true);
+const liveSessionKey = cached[0].session_key;
+
+  fetch(`https://api.openf1.org/v1/sessions?session_key=${liveSessionKey}`)
+    .then((r) => r.json())
+    .then((data) => {
+      if (Array.isArray(data) && data.length > 0) {
+        const updatedSession = data[0];
+        const updatedEnd = new Date(updatedSession.date_end).getTime();
+
+        if (now <= updatedEnd + LIVE_WINDOW_BUFFER) {
+
+          const refreshedCache = [updatedSession, ...cached.slice(1)];
+          chrome.storage.local.set({ cachedSessions: refreshedCache, cachedTimestamp: Date.now() });
+          showLiveMessage(refreshedCache, "in-progress", true);
         } else {
          
-          showLiveMessage(cached, liveStatus || "wrapping-up");
+          fetchAndCache();
         }
-      })
-      .catch(() => {
-      
+      } else if (data && data.detail) {
+        
+        showLiveMessage(cached, "in-progress", true);
+      } else {
         showLiveMessage(cached, liveStatus || "wrapping-up");
-      });
+      }
+    })
+    .catch(() => {
+      showLiveMessage(cached, liveStatus || "wrapping-up");
+    });
     return;
   }
   // the cached "next session" is over (past its live window) means data is outdated
