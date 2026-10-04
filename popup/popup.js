@@ -156,6 +156,30 @@ function getLiveStatus(session) {
   return null;
 }
 
+// displays the "live" message block. `delayed` is set true only when a
+// revalidation fetch got locked out past the scheduled end time, so we can
+// tell the user the session is running later than scheduled.
+function showLiveMessage(cached, status, delayed = false) {
+  const session = cached[0];
+  let message;
+
+  if (status === "starting-soon") {
+    message = `<strong class="live-session-name"></strong> is starting soon.`;
+  } else if (status === "in-progress") {
+    message = `<strong class="live-session-name"></strong> is currently in progress${
+      delayed ? " (running later than scheduled)" : ""
+    }.`;
+  } else {
+    message = `<strong class="live-session-name"></strong> has finished.`;
+  }
+
+  document.getElementById("next-session").innerHTML = `
+    <p>${message}</p>
+    <p>Live timing isn't available in this extension.</p>
+  `;
+  document.querySelector(".live-session-name").textContent = session.session_name;
+  renderWeekendList(cached, session);
+}
 // entry point: check cache first. if the cached next session is currently live
 // (in any phase), show a status message instead of fetching. otherwise, fetch
 // only if the cache is missing/invalid, older than 1 hour, or the cached session is over
@@ -172,27 +196,51 @@ chrome.storage.local.get(["cachedSessions", "cachedTimestamp"]).then((result) =>
 
   const liveStatus = cached ? getLiveStatus(cached[0]) : null;
 
-  if (liveStatus) {
-    const session = cached[0];
-    let message;
-
-    if (liveStatus === "starting-soon") {
-      message = `<strong class="live-session-name"></strong> is starting soon.`;
-    } else if (liveStatus === "in-progress") {
-      message = `<strong class="live-session-name"></strong> is currently in progress.`;
-    } else {
-      message = `<strong class="live-session-name"></strong> has finished.`;
-    }
-
-    document.getElementById("next-session").innerHTML = `
-      <p>${message}</p>
-      <p>Live timing isn't available in this extension.</p>
-    `;
-    document.querySelector(".live-session-name").textContent = session.session_name;
-    renderWeekendList(cached, session);
+  if (liveStatus === "starting-soon" || liveStatus === "in-progress") {
+  // unambiguous — scheduled math matches reality, safe to trust cache, no fetch needed
+    showLiveMessage(cached, liveStatus);
     return;
   }
 
+  // this was added to fix an untreated case that i encountered,since the code uses static start
+  // and end times from the cache to display the session status,so in the case of a session getting
+  //  delayed it displayed that the session ended while it is still running.
+  // so what this does is it revalidates the status against the live api instead of trusting the
+  // cache, the api locks out requests while a session is actually live so that lock response is
+  //  used as proof the session is still running, overriding the stale local time calculation. 
+  // if the api responds normally with data instead, that confirms the session really is over,
+  //  and the cache gets refreshed with the new data.
+  const scheduledStart = cached ? new Date(cached[0].date_start).getTime() : null;
+  const scheduledEnd = cached ? new Date(cached[0].date_end).getTime() : null;
+  const sessionShouldHaveStarted = cached && now >= scheduledStart;
+
+  const needsRevalidation =
+    cached &&
+    (liveStatus === "wrapping-up" ||
+      (sessionShouldHaveStarted && liveStatus === null && now < scheduledEnd + 4 * ONE_HOUR));
+
+  if (needsRevalidation) {
+    fetch(`https://api.openf1.org/v1/sessions?date_start>=${new Date().toISOString()}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+         
+          chrome.storage.local.set({ cachedSessions: data, cachedTimestamp: Date.now() });
+          renderAll(data);
+        } else if (data && data.detail) {
+          
+          showLiveMessage(cached, "in-progress", true);
+        } else {
+         
+          showLiveMessage(cached, liveStatus || "wrapping-up");
+        }
+      })
+      .catch(() => {
+      
+        showLiveMessage(cached, liveStatus || "wrapping-up");
+      });
+    return;
+  }
   // the cached "next session" is over (past its live window) means data is outdated
   const isOver = cached && now > new Date(cached[0].date_end).getTime() + LIVE_WINDOW_BUFFER;
 
